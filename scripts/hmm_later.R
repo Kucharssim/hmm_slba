@@ -41,23 +41,23 @@ hyperparams <- list(
 # generated_data$save_object(here("saves", "prior_predictives.Rds"))
 generated_data <- readRDS(here("saves", "prior_predictives.Rds"))
 
-generated_data$summary(variables = c("prop_state"))
-generated_data$summary(variables = c("prop_responses"))
-generated_data$summary(variables = c("mean_rt"))
+# generated_data$summary(variables = c("prop_state"))
+# generated_data$summary(variables = c("prop_responses"))
+# generated_data$summary(variables = c("mean_rt"))
+# 
+# mcmc_hist(generated_data$draws(variables = "prop_state"),     facet_args = list(scales = "fixed", dir = "v"))
+# mcmc_hist(generated_data$draws(variables = "prop_responses"), facet_args = list(scales = "fixed", dir = "v"))
+# mcmc_hist(generated_data$draws(variables = "mean_rt"),        facet_args = list(scales = "fixed", dir = "v"))
 
-mcmc_hist(generated_data$draws(variables = "prop_state"),     facet_args = list(scales = "fixed", dir = "v"))
-mcmc_hist(generated_data$draws(variables = "prop_responses"), facet_args = list(scales = "fixed", dir = "v"))
-mcmc_hist(generated_data$draws(variables = "mean_rt"),        facet_args = list(scales = "fixed", dir = "v"))
 
-
-hist(as.vector(generated_data$draws(variables = "rt")[10,1,]), breaks=20)
+# hist(as.vector(generated_data$draws(variables = "rt")[10,1,]), breaks=20)
 
 rt <- generated_data$draws("rt")
 responses <- generated_data$draws("responses")
 state <- generated_data$draws("state")
 
 ### Parameter recovery ----
-parameters <- c("nu_vec", "sigma", "alpha", "t0", "init_prob[1]", "tran_prob[1,1]", "tran_prob[2,2]")
+parameters <- c("nu_vec[1,1]", "nu_vec[2,1]", "sigma", "alpha", "t0", "init_prob[1]", "tran_prob[1,1]", "tran_prob[2,2]")
 generating_parameters <- as_tibble(posterior::as_draws_df(generated_data$draws(parameters)))
 hmm_later <- cmdstan_model(stan_file = here("stan", "later", "hmm_later.stan"), include_paths = here())
 
@@ -83,6 +83,7 @@ quiet <- function(x) {
   invisible(force(x)) 
 } 
 
+### Maximum aposteriori estimation ----
 map <- function(stan_data, true_states, max_iter = 50){
   converged <- FALSE
   i <- 1
@@ -142,7 +143,7 @@ for(p in parameters_names){
 }
 par(mfrow = c(1, 1))
 
-# fit mcmc
+### Using full Bayes ----
 mcmc <- function(iter, stan_data, true_states, max_tries = 25){
   finished <- FALSE
   i <- 1
@@ -171,19 +172,45 @@ mcmc <- function(iter, stan_data, true_states, max_tries = 25){
   }
 }
 
-#pb <- dplyr::progress_estimated(n = n_predictive)
-for(i in seq_len(n_predictive)){
-  stan_data$rt <- as.vector(rt[i,1,])
-  stan_data$responses <- as.vector(responses[i,1,])
-  mcmc(i, stan_data, as.vector(state[i,1,]))
-  #pb$tick()$print()
-  cat("iteration", i, "done\n")
+# # main simulation loop (fit each dataset)
+# #pb <- dplyr::progress_estimated(n = n_predictive)
+# for(i in seq_len(n_predictive)){
+#   stan_data$rt <- as.vector(rt[i,1,])
+#   stan_data$responses <- as.vector(responses[i,1,])
+#   mcmc(i, stan_data, as.vector(state[i,1,]))
+#   #pb$tick()$print()
+#   cat("iteration", i, "done\n")
+# }
+
+### Simulation based calibration ----
+# the distribution of the cumulative probability of true parameter compared to the prior predictive data averaged posterior
+# should be uniform
+
+# let's combine all posteriors to get data averaged posterior
+saved_fits <- list.files(here("saves", "sbc"))
+# we need to order the files
+saved_fits <- saved_fits[gsub("sim_", "", saved_fits) %>% gsub(".Rds", "", .) %>% as.integer() %>% order()]
+
+draws <- lapply(saved_fits, function(file) {
+  samples <- readRDS(here("saves", "sbc", file))
+  as_tibble(as_draws_df(samples$draws(parameters)))
+})
+draws <- bind_rows(draws)
+
+p_ecdf <- estimated_parameters
+
+# for each parameter draw from prior, compute the probability that it is larger than a random draw from a data averaaged posterior
+par(mfrow = c(floor(kk), ceiling(kk)))
+for(par in parameters_names){
+  for(i in seq_len(n_predictive)){
+    p_ecdf[[par]][[i]] <- mean(generating_parameters[[par]][[i]] > draws[[par]])
+  }
+  
+  hist(p_ecdf[[par]], breaks = seq(0, 1, 0.1), main = char2label(par), xlab = "", ylab = "Density", freq = FALSE)
 }
+par(mfrow = c(1,1))
 
-# save(fits, file = here("fits.Rdata"))
-# draws <- lapply(fits, function(f) as_tibble(as_draws_df(f$draws(parameters))))
-# all_draws <- bind_rows(draws)
-
+#### 
 # stan_data <- hyperparams
 # stan_data$N_obs <- nrow(tdA)
 # stan_data$rt <- tdA$RT/1000
