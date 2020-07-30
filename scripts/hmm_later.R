@@ -7,7 +7,7 @@ library(posterior)
 library(tidyverse)
 
 ### Prior predictives ----
-n_predictive <- 250
+n_predictive <- 1000
 hmm_later_prior_pred <- cmdstan_model(stan_file = here("stan", "later", "hmm_later_prior_pred.stan"), include_paths = here()) 
 
 hyperparams <- list(
@@ -36,9 +36,10 @@ hyperparams <- list(
   init_prob_alpha = rep(5, 2),
   tran_prob_alpha = list(c(8, 2), c(2, 8))
 )
+#saveRDS(hyperparams, here("saves", "hyperparams.Rds"))
 
-# generated_data <- hmm_later_prior_pred$sample(data = hyperparams, iter_warmup = 0, iter_sampling = n_predictive, fixed_param = TRUE)
-# generated_data$save_object(here("saves", "prior_predictives.Rds"))
+generated_data <- hmm_later_prior_pred$sample(data = hyperparams, iter_warmup = 0, iter_sampling = n_predictive, fixed_param = TRUE, seed = 2020)
+generated_data$save_object(here("saves", "prior_predictives.Rds"))
 generated_data <- readRDS(here("saves", "prior_predictives.Rds"))
 
 # generated_data$summary(variables = c("prop_state"))
