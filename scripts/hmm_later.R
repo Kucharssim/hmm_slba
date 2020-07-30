@@ -105,9 +105,17 @@ map <- function(stan_data, true_states, max_iter = 50){
   }
 }
 
+char2label <- function(x){
+  xx <- sprintf("expression(%s)", x)
+  eval(parse(text=xx))
+}
+
 stan_data <- hyperparams
 
 estimated_parameters <- dplyr::select(generating_parameters, -c(".chain", ".iteration", ".draw"))
+parameters_names <- colnames(estimated_parameters)
+
+# fit models (get MAP estimates)
 pb <- dplyr::progress_estimated(n = n_predictive)
 for(i in seq_len(n_predictive)){
   stan_data$rt <- as.vector(rt[i,1,])
@@ -116,21 +124,59 @@ for(i in seq_len(n_predictive)){
   pb$tick()$print()
 }
 
-parameters_names <- names(estimated_parameters)
 mean(complete.cases(estimated_parameters))
 kk <- sqrt(length(parameters_names))
 par(mfrow = c(floor(kk), ceiling(kk)))
 for(p in parameters_names){
   x <- generating_parameters[,p,drop=TRUE]
   y <- estimated_parameters[,p,drop=TRUE]
-  plot(x, y, pch = 19, xlab = "True", ylab = "Estimated", main = p, 
+  plot(x, y, pch = 19, xlab = "True", ylab = "Estimated", main = char2label(p), 
        xlim = range(c(x, y), na.rm = TRUE), 
        ylim = range(c(x, y), na.rm = TRUE))
   abline(0, 1)
-  rug(generating_parameters[,p,drop=TRUE], col = (!complete.cases(estimated_parameters)) + 1)
+  #rug(generating_parameters[,p,drop=TRUE], col = (!complete.cases(estimated_parameters)) + 1)
 }
 par(mfrow = c(1, 1))
 
+# fit mcmc
+mcmc <- function(stan_data, true_states, max_tries = 5){
+  finished <- FALSE
+  i <- 1
+  while(i <= max_tries && !finished){
+    samples <- suppressMessages(suppressWarnings(quiet(
+      hmm_later$sample(data = stan_data, chains = 1, parallel_chains = 1, 
+                       iter_warmup = 500, iter_sampling = 1000, 
+                       init = initFun, refresh = 0, show_messages = FALSE)
+      )))
+    finished <- length(samples$output_files(include_failed = FALSE)) != 0  
+    if(finished){
+      # assess label switching
+      est_states <- apply(matrix(samples$summary("state_prob", mean)$mean, ncol = 2, byrow = TRUE), 1, which.max)
+      p_agree <- mean(est_states == true_states)
+      if(p_agree < 0.5) converged <- FALSE
+    }
+    i <- i + 1
+  }
+  
+  if(finished){
+    #return(as_tibble(as_draws_df(samples$draws(variables = parameters))))
+    return(samples)
+  } else{
+    return(NULL)
+  }
+}
+
+pb <- dplyr::progress_estimated(n = n_predictive)
+fits <- list()
+for(i in seq_len(n_predictive)){
+  stan_data$rt <- as.vector(rt[i,1,])
+  stan_data$responses <- as.vector(responses[i,1,])
+  fits[[i]] <- mcmc(stan_data, as.vector(state[i,1,]))
+  pb$tick()$print()
+}
+save(fits, file = here("fits.Rdata"))
+draws <- lapply(fits, function(f) as_tibble(as_draws_df(f$draws(parameters))))
+all_draws <- bind_rows(draws)
 # stan_data <- hyperparams
 # stan_data$N_obs <- nrow(tdA)
 # stan_data$rt <- tdA$RT/1000
