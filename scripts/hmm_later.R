@@ -37,7 +37,9 @@ hyperparams <- list(
   tran_prob_alpha = list(c(8, 2), c(2, 8))
 )
 
-generated_data <- hmm_later_prior_pred$sample(data = hyperparams, iter_warmup = 0, iter_sampling = n_predictive, fixed_param = TRUE)
+# generated_data <- hmm_later_prior_pred$sample(data = hyperparams, iter_warmup = 0, iter_sampling = n_predictive, fixed_param = TRUE)
+# generated_data$save_object(here("saves", "prior_predictives.Rds"))
+generated_data <- readRDS(here("saves", "prior_predictives.Rds"))
 
 generated_data$summary(variables = c("prop_state"))
 generated_data$summary(variables = c("prop_responses"))
@@ -111,18 +113,20 @@ char2label <- function(x){
 }
 
 stan_data <- hyperparams
+# stan_data$rt <- as.vector(rt[1,1,])
+# stan_data$responses <- as.vector(responses[1,1,])
 
 estimated_parameters <- dplyr::select(generating_parameters, -c(".chain", ".iteration", ".draw"))
 parameters_names <- colnames(estimated_parameters)
 
 # fit models (get MAP estimates)
-pb <- dplyr::progress_estimated(n = n_predictive)
-for(i in seq_len(n_predictive)){
-  stan_data$rt <- as.vector(rt[i,1,])
-  stan_data$responses <- as.vector(responses[i,1,])
-  estimated_parameters[i,] <- as.list(map(stan_data, as.vector(state[i,1,])))
-  pb$tick()$print()
-}
+# pb <- dplyr::progress_estimated(n = n_predictive)
+# for(i in seq_len(n_predictive)){
+#   stan_data$rt <- as.vector(rt[i,1,])
+#   stan_data$responses <- as.vector(responses[i,1,])
+#   estimated_parameters[i,] <- as.list(map(stan_data, as.vector(state[i,1,])))
+#   pb$tick()$print()
+# }
 
 mean(complete.cases(estimated_parameters))
 kk <- sqrt(length(parameters_names))
@@ -139,7 +143,7 @@ for(p in parameters_names){
 par(mfrow = c(1, 1))
 
 # fit mcmc
-mcmc <- function(stan_data, true_states, max_tries = 5){
+mcmc <- function(iter, stan_data, true_states, max_tries = 25){
   finished <- FALSE
   i <- 1
   while(i <= max_tries && !finished){
@@ -154,29 +158,32 @@ mcmc <- function(stan_data, true_states, max_tries = 5){
       est_states <- apply(matrix(samples$summary("state_prob", mean)$mean, ncol = 2, byrow = TRUE), 1, which.max)
       p_agree <- mean(est_states == true_states)
       if(p_agree < 0.5) converged <- FALSE
+    } else{
+      rm(samples)
     }
     i <- i + 1
   }
   
   if(finished){
-    #return(as_tibble(as_draws_df(samples$draws(variables = parameters))))
-    return(samples)
-  } else{
-    return(NULL)
+    #return(as_tibble(as_draws_df(samples$draws())))
+    #return(samples)
+    samples$save_object(file = here("saves", "sbc", sprintf("sim_%s.Rds", iter)))
   }
 }
 
-pb <- dplyr::progress_estimated(n = n_predictive)
-fits <- list()
+#pb <- dplyr::progress_estimated(n = n_predictive)
 for(i in seq_len(n_predictive)){
   stan_data$rt <- as.vector(rt[i,1,])
   stan_data$responses <- as.vector(responses[i,1,])
-  fits[[i]] <- mcmc(stan_data, as.vector(state[i,1,]))
-  pb$tick()$print()
+  mcmc(i, stan_data, as.vector(state[i,1,]))
+  #pb$tick()$print()
+  cat("iteration", i, "done\n")
 }
-save(fits, file = here("fits.Rdata"))
-draws <- lapply(fits, function(f) as_tibble(as_draws_df(f$draws(parameters))))
-all_draws <- bind_rows(draws)
+
+# save(fits, file = here("fits.Rdata"))
+# draws <- lapply(fits, function(f) as_tibble(as_draws_df(f$draws(parameters))))
+# all_draws <- bind_rows(draws)
+
 # stan_data <- hyperparams
 # stan_data$N_obs <- nrow(tdA)
 # stan_data$rt <- tdA$RT/1000
