@@ -38,8 +38,8 @@ hyperparams <- list(
 )
 #saveRDS(hyperparams, here("saves", "hyperparams.Rds"))
 
-generated_data <- hmm_later_prior_pred$sample(data = hyperparams, iter_warmup = 0, iter_sampling = n_predictive, fixed_param = TRUE, seed = 2020)
-generated_data$save_object(here("saves", "prior_predictives.Rds"))
+#generated_data <- hmm_later_prior_pred$sample(data = hyperparams, iter_warmup = 0, iter_sampling = n_predictive, fixed_param = TRUE, seed = 2020)
+#generated_data$save_object(here("saves", "prior_predictives.Rds"))
 generated_data <- readRDS(here("saves", "prior_predictives.Rds"))
 
 # generated_data$summary(variables = c("prop_state"))
@@ -145,43 +145,7 @@ for(p in parameters_names){
 par(mfrow = c(1, 1))
 
 ### Using full Bayes ----
-mcmc <- function(iter, stan_data, true_states, max_tries = 25){
-  finished <- FALSE
-  i <- 1
-  while(i <= max_tries && !finished){
-    samples <- suppressMessages(suppressWarnings(quiet(
-      hmm_later$sample(data = stan_data, chains = 1, parallel_chains = 1, 
-                       iter_warmup = 500, iter_sampling = 1000, 
-                       init = initFun, refresh = 0, show_messages = FALSE)
-      )))
-    finished <- length(samples$output_files(include_failed = FALSE)) != 0  
-    if(finished){
-      # assess label switching
-      est_states <- apply(matrix(samples$summary("state_prob", mean)$mean, ncol = 2, byrow = TRUE), 1, which.max)
-      p_agree <- mean(est_states == true_states)
-      if(p_agree < 0.5) converged <- FALSE
-    } else{
-      rm(samples)
-    }
-    i <- i + 1
-  }
-  
-  if(finished){
-    #return(as_tibble(as_draws_df(samples$draws())))
-    #return(samples)
-    samples$save_object(file = here("saves", "sbc", sprintf("sim_%s.Rds", iter)))
-  }
-}
-
-# # main simulation loop (fit each dataset)
-# #pb <- dplyr::progress_estimated(n = n_predictive)
-# for(i in seq_len(n_predictive)){
-#   stan_data$rt <- as.vector(rt[i,1,])
-#   stan_data$responses <- as.vector(responses[i,1,])
-#   mcmc(i, stan_data, as.vector(state[i,1,]))
-#   #pb$tick()$print()
-#   cat("iteration", i, "done\n")
-# }
+# run run_fit_sbc.sh script
 
 ### Simulation based calibration ----
 # the distribution of the cumulative probability of true parameter compared to the prior predictive data averaged posterior
@@ -192,9 +156,15 @@ saved_fits <- list.files(here("saves", "sbc"))
 # we need to order the files
 saved_fits <- saved_fits[gsub("sim_", "", saved_fits) %>% gsub(".Rds", "", .) %>% as.integer() %>% order()]
 
-draws <- lapply(saved_fits, function(file) {
-  samples <- readRDS(here("saves", "sbc", file))
-  as_tibble(as_draws_df(samples$draws(parameters)))
+draws <- lapply(seq_along(saved_fits), function(i) {
+  file <- here("saves", "sbc", saved_fits[i])
+  samples <- readRDS(file)
+  rhats <- samples$summary(parameters)$rhat
+  labels <- apply(matrix(samples$summary("state_prob")$mean, ncol = 2, byrow = TRUE),1,which.max)
+  as_tibble(as_draws_df(samples$draws(parameters))) %>% 
+    mutate(.sim = i,
+           good_psrf = all(rhats > 0.99) && all(rhats < 1.01),
+           good_labels = mean(labels == as.vector(state[i,,])) > 0.5)
 })
 draws <- bind_rows(draws)
 
@@ -207,10 +177,58 @@ for(par in parameters_names){
     p_ecdf[[par]][[i]] <- mean(generating_parameters[[par]][[i]] > draws[[par]])
   }
   
-  hist(p_ecdf[[par]], breaks = seq(0, 1, 0.1), main = char2label(par), xlab = "", ylab = "Density", freq = FALSE)
+  hist(p_ecdf[[par]], breaks = seq(0, 1, 0.1), main = char2label(par), xlab = "", ylab = "Frequency", freq = TRUE)
 }
 par(mfrow = c(1,1))
 
+
+posterior_summaries <- draws %>%
+  subset(good_labels) %>%
+  pivot_longer(cols = all_of(parameters_names), names_to = "parameter", values_to = "estimated_value") %>%
+  group_by(parameter, .sim) %>%
+  summarise(mean_post = mean(estimated_value),
+            variance_post = var(estimated_value),
+            std_dev_post = sd(estimated_value), 
+            q25 = quantile(estimated_value, 0.25),
+            q75 = quantile(estimated_value, 0.75)) %>%
+  ungroup() %>%
+  left_join(
+    generating_parameters %>% 
+      pivot_longer(cols = all_of(parameters_names), names_to = "parameter", values_to = "true_value") %>%
+      mutate(.sim = .iteration),
+    by = c("parameter", ".sim")
+  ) %>%
+  select(-".chain", -".iteration", -".draw") %>%
+  left_join(
+    generating_parameters %>% 
+      pivot_longer(cols = all_of(parameters_names), names_to = "parameter", values_to = "true_value") %>%
+      group_by(parameter) %>%
+      summarise(variance_prior = var(true_value)) %>%
+      ungroup(),
+    by = "parameter"
+  ) %>% 
+  mutate(z_score = (mean_post - true_value) / std_dev_post,
+         contraction = 1 - variance_post/variance_prior,
+         covered = true_value > q25 & true_value < q75)
+  
+posterior_summaries %>% 
+  #subset(z_score < 5 & z_score > -5) %>%
+  #subset(contraction > 0 & contraction < 1) %>%
+  ggplot(aes(x = contraction, y = z_score)) + 
+  geom_point() +
+  facet_wrap(.~parameter, scales = "fixed") + 
+  theme_bw()
+
+posterior_summaries %>%
+  ggplot(aes(x = true_value, y = mean_post)) +
+  geom_abline(intercept = 0, slope = 1) +
+  geom_point() +
+  facet_wrap(.~parameter, scales = "free") + 
+  theme_bw()
+
+posterior_summaries %>% 
+  group_by(parameter) %>%
+  summarise(perc_covered = mean(covered))
 #### 
 # stan_data <- hyperparams
 # stan_data$N_obs <- nrow(tdA)
