@@ -40,3 +40,5 @@ vignettes/*.pdf
 
 # MacOS files
 *.DS_Store
+
+saves/sbc/
