@@ -65,6 +65,7 @@
     
     return log_lik;
   }
+  
   // function to convert real to integer
   int response_to_integer(real response, int N_acc){
     int output;
