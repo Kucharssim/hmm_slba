@@ -35,4 +35,5 @@ samples <- hmm_later$sample(data = stan_data,
                             init = initFun, adapt_delta = 0.99)
 samples$summary(variables = c("nu_vec[1,1]", "nu_vec[2,1]", "alpha", "sigma", "t0"))
 
-saveRDS(samples, file = here("saves", "fit_hmm_later", sprintf("dutilh_2010_subject_%s.Rds", subject)))
+samples$save_object(file = here("saves", "fit_hmm_later", sprintf("dutilh_2010_subject_%s.Rds", subject)))
+
