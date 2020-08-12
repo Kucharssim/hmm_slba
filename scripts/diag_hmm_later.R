@@ -1,6 +1,3 @@
-args <- commandArgs(trailingOnly = TRUE)
-subject <- as.character(args[1])
-
 library(cmdstanr)
 set_cmdstan_path("~/.cmdstan/cmdstan-2.24.0-rc1/")
 cmdstan_version()
@@ -50,110 +47,118 @@ plater <- function(rt, response, nu, sigma, alpha, t0, log.p = FALSE){
 curve(plater(rt=x, 1, c(0.7, 0.3), c(0.5, 0.5), c(0.5, 0.5), 0.1), from = 0, to = 3)
 
 #### Read data and models -----
-data <- readr::read_csv(here::here("data", sprintf("dutilh_2010_subject_%s.csv", subject)))
-
 hmm_later_prior_pred <- cmdstan_model(stan_file = here("stan", "later", "hmm_later_prior_pred.stan"), include_paths = here()) 
 hmm_later <- cmdstan_model(stan_file = here("stan", "later", "hmm_later.stan"), include_paths = here())
-hyperparams <- readRDS(here("saves", "hyperparams.Rds"))
+parameters <- c("nu_vec[1,1]", "nu_vec[2,1]", "alpha", "sigma", "t0")
 
-stan_data <- hyperparams
-stan_data$N_obs <- nrow(data)
-stan_data$rt <- data$rt
-stan_data$responses <- data$accumulator
-
-initFun <- function(){
-  prior <- hmm_later_prior_pred$sample(data = hyperparams, iter_warmup = 0, iter_sampling = 1, fixed_param = TRUE)
-  out <- list(
-    sigma = as.vector(prior$draws(variables = "sigma")),
-    alpha = as.vector(prior$draws(variables = "alpha")),
-    t0 = as.vector(prior$draws(variables = "t0"))
-  )
+for(subject in LETTERS[1:11]){
+  cat("===== Subject", subject, " =====\n")
+  data <- readr::read_csv(here::here("data", sprintf("dutilh_2010_subject_%s.csv", subject)), 
+                          col_types = cols(
+                            pacc = col_double(),
+                            rt = col_double(),
+                            accumulator = col_integer()
+                          ))
+  data$obs <- seq_len(nrow(data))
   
-  out 
-}
-
-#### Get MCMC samples ----
-samples <- hmm_later$sample(data = stan_data, 
-                            chains = 8, parallel_chains = 4, iter_warmup = 1000, iter_sampling = 1000,
-                            init = initFun, adapt_delta = 0.99)
-samples$summary(variables = c("nu_vec[1,1]", "nu_vec[2,1]", "alpha", "sigma", "t0"))
-
-state_prob <- matrix(samples$summary(variables = "state_prob")$mean, ncol = 2, byrow = TRUE)
-
-
-#### Plot results -----
-cum_check <- dplyr::tibble(
-  rt = data$rt,
-  accumulator = data$accumulator,
-  p11 = NA, p12 = NA, p21 = NA, p22 = NA
-)
-
-for(i in seq_len(nrow(cum_check))){
-  if(cum_check$accumulator[i] == 1){
-    cum_check$p11[i] <- state_prob[i,1]
-    cum_check$p21[i] <- state_prob[i,2]
-    cum_check$p12[i] <- 0
-    cum_check$p22[i] <- 0
-  } else{
-    cum_check$p11[i] <- 0
-    cum_check$p21[i] <- 0
-    cum_check$p12[i] <- state_prob[i,1]
-    cum_check$p22[i] <- state_prob[i,2]
-  }
-}
-
-cum_check <- arrange(cum_check, rt)
-
-cum_check <- mutate_at(cum_check, .vars = vars(starts_with("p")), .funs = list(cumsum))
-
-# cum_check$p11 <- cum_check$p11 / sum(state_prob[,1])
-# cum_check$p12 <- cum_check$p12 / sum(state_prob[,1])
-# cum_check$p21 <- cum_check$p21 / sum(state_prob[,2])
-# cum_check$p22 <- cum_check$p22 / sum(state_prob[,2])
-
-p_cum_check <- cum_check %>%
-  pivot_longer(cols = starts_with("p"), 
-               names_to = c("state", "response"), names_pattern = "p(.)(.)",
-               values_to = "probability") %>%
-  mutate(state = sprintf("State %s", state), 
-         response = ifelse(response == 1, "Correct", "Incorrect"),
-         probability = probability/nrow(cum_check)) %>%
-  ggplot(aes(x = rt, y = probability)) + #, group = response, col = response)) +
-  geom_line(size = 1, colour = "red") +
-  facet_wrap(state~response) +
-  #ylim(0:1) + 
-  ylab("Cumulative probability") + xlab("Time (sec)") +
-  theme_bw(base_size = 20)
-
-add_prediction <- function(iteration = 1, chain = 1){
-  pars <- list()
-  # pars$nu    <- matrix(samples$summary(variables = "nu_vec")$mean,    ncol = 2)
-  # pars$sigma <- matrix(samples$summary(variables = "sigma_vec")$mean, ncol = 2)
-  # pars$alpha <- matrix(samples$summary(variables = "alpha_vec")$mean, ncol = 2)
-  # pars$t0    <- samples$summary(variables = "t0_vec")$mean
+  #### Get MCMC samples
+  samples <- readRDS(here("saves", "fit_hmm_later", sprintf("dutilh_2010_subject_%s.Rds", subject)))
+  samples$summary(variables = c("nu_vec[1,1]", "nu_vec[2,1]", "alpha", "sigma", "t0")) %>% print()
   
-  pars$nu    <- matrix(as.vector(samples$draws(variables = "nu_vec")   [iteration,chain,]), ncol = 2)
-  pars$sigma <- matrix(as.vector(samples$draws(variables = "sigma_vec")[iteration,chain,]), ncol = 2)
-  pars$alpha <- matrix(as.vector(samples$draws(variables = "alpha_vec")[iteration,chain,]), ncol = 2)
-  pars$t0    <- as.vector(samples$draws(variables = "t0_vec")[iteration,chain,])
-  #browser()
-  cum_check_2 <- expand_grid(rt = seq(min(cum_check$rt), max(cum_check$rt), length.out = 100),
-                             response = 1:2,
-                             state = 1:2,
-                             probability = NA)
-  for(i in seq_len(nrow(cum_check_2))) {
-    cum_check_2$probability[i] <- plater(rt = cum_check_2$rt[i], response = cum_check_2$response[i], 
-                                         nu = pars$nu[cum_check_2$state[i],], 
-                                         sigma = pars$sigma[cum_check_2$state[i],],
-                                         alpha = pars$alpha[cum_check_2$state[i],],
-                                         t0    = pars$t0[cum_check_2$state[i]]) * mean( state_prob[,cum_check_2$state[i]] )
+  traceplot <- bayesplot::mcmc_trace(samples$draws(variables = parameters), facet_args = list(ncol = 2)) +
+    ggplot2::ggtitle(sprintf("Subject %s", subject))
+  ggplot2::ggsave(filename = here("figures", "traceplots", sprintf("dutilh_2010_subject_%s.png", subject)))
+  
+  # reshape state probability draws into a long data frame
+  state_prob <- samples$draws("state_prob") %>% 
+    as_draws_df() %>% 
+    pivot_longer(cols          = starts_with("state_prob"), 
+                 names_pattern = "state_prob\\[(.*),(.*)\\]", 
+                 names_to      = c("state", "obs"),
+                 values_to     = "probability")  %>%
+    mutate(state = as.integer(state), obs = as.integer(obs))
+  
+  random_draws <- sample(unique(state_prob$.draw), size = 1000, replace = FALSE)
+  
+  # plot empirical cumulative rt distributions scaled by proportions of correct/incorrect and state1/state2
+  cum_plot <- state_prob %>%  
+    # subset only a portion of draws
+    subset(.draw %in% random_draws) %>%
+    left_join(data) %>%
+    arrange(.draw, state, accumulator, rt) %>%
+    group_by(.draw, state, accumulator) %>%
+    mutate(cum_prob = cumsum(probability)/nrow(data)) %>%
+    ungroup() %>%
+    group_by(state, accumulator, rt) %>%
+    summarise(median = median(cum_prob), lower = quantile(cum_prob, 0.05), upper = quantile(cum_prob, 0.95)) %>%
+    mutate(group = sprintf("%s state, %s response", 
+                           ifelse(state==1, "accurate", "fast"),
+                           ifelse(accumulator==1, "correct", "incorrect")
+                           )
+           ) %>%
+    ggplot(aes(x = rt, y = median, group = group, fill = group)) + 
+    geom_line() + 
+    geom_ribbon(aes(ymin=lower,ymax=upper), alpha = 0.5) +
+    scale_fill_manual(values = c("darkred", "red", "darkblue", "blue")) + 
+    ylab("Cumulative probability") +
+    xlab("Response time") + 
+    ggtitle(sprintf("Subject %s", subject)) + 
+    theme_light() + 
+    theme(text = element_text(size = 20), legend.title = element_blank(), legend.position = "none")
+  
+  # get samples of parameters
+  samples_params <- samples$draws(parameters) %>%
+    as_draws_df() %>%
+    as_tibble() %>%
+    pivot_longer(cols = starts_with(parameters), names_pattern = "(.*)\\[(.*)\\]", names_to = c("parameter", "state")) %>%
+    subset(.draw %in% random_draws) %>%
+    mutate(parameter = gsub("_vec", "_acc", parameter), state = as.integer(gsub(",1", "", state)))
+  
+  
+  # plot model based cumulative rt distributions
+  df <- expand.grid(
+    rt          = seq(0, max(data$rt), length.out = 25),
+    accumulator = 1:2,
+    state       = 1:2,
+    .draw       = random_draws[1:500],
+    KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+
+  # compute the cumulative rt distributions
+  call_plater <- function(rt, accumulator, draw_, state_){
+    #browser()
+    nu <- subset(samples_params, .draw == draw_ & parameter == "nu_acc" & state == state_)$value
+    nu <- c(nu, 1-nu)
+    sigma <- subset(samples_params, .draw == draw_ & parameter == "sigma")$value
+    sigma <- rep(sigma, 2)
+    alpha <- subset(samples_params, .draw == draw_ & parameter == "alpha" & state == state_)$value
+    alpha <- rep(alpha, 2)
+    t0    <- subset(samples_params, .draw == draw_ & parameter == "t0")$value
+    
+    # scale by the probability of response and state
+    n_cases <- sum(subset(state_prob, .draw == draw_ & state == state_)$probability)
+    if(accumulator == 2) n_cases <- nrow(data) - n_cases
+    plater(rt, accumulator, nu, sigma, alpha, t0) * n_cases / nrow(data)
   }
   
-  geom_line(size = 0.5, alpha = 0.1,
-            data = cum_check_2 %>% mutate(state = sprintf("State %s", state), response = ifelse(response == 1, "Correct", "Incorrect")))
-  
-}
+  df <- df %>% 
+    group_by(accumulator, state, .draw) %>%
+    # compute the cdf
+    mutate(cum_prob = call_plater(rt, unique(accumulator), unique(.draw), unique(state))) %>%
+    ungroup() %>%
+    # compute confidence bounds + median
+    group_by(state, accumulator, rt) %>%
+    summarise(median = median(cum_prob), lower = quantile(cum_prob, 0.05), upper = quantile(cum_prob, 0.95)) %>%
+    ungroup() %>%
+    # labeling should be the same as for the data plot
+    mutate(group = sprintf("%s state, %s response", 
+                           ifelse(state==1, "accurate", "fast"),
+                           ifelse(accumulator==1, "correct", "incorrect")
+                           )
+           )
+    
+  cum_plot +
+    geom_line(data = df, linetype = 2) + 
+    geom_ribbon(aes(ymin=lower,ymax=upper), alpha = 0.25, data = df)
+  ggplot2::ggsave(filename = here("figures", "cum_plots", sprintf("dutilh_2010_subject_%s.png", subject)))
 
-p_cum_check + 
-  sapply(1:50, add_prediction) +
-  geom_line(size = 2, colour = "red", alpha = 0.8)
+}
