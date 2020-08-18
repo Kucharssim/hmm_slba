@@ -5,46 +5,9 @@ library(here)
 library(bayesplot)
 library(posterior)
 library(tidyverse)
-library(rstan)
 
-# get functions to plot analytic LATER curves ----
-positive_normal <- readLines(here("stan", "helpers", "positive_normal.stan"))
-later_functions <- readLines(here("stan", "later", "later_functions.stan"))
-all_functions <- sprintf("functions{\n%s\n%s\n}", paste(positive_normal, collapse = "\n"), paste(later_functions, collapse = "\n"))
+source(here("R", "expose_stan_functions.R"))
 
-expose_stan_functions(stanmodel = stan_model(model_code=all_functions))
-
-dlater <- function(rt, response, nu, sigma, alpha, t0, log = FALSE){
-  out <- sapply(rt, function(rt_){
-    if(rt_ > t0) {
-      later_lpdf(rt_, response, nu, sigma, alpha, t0)
-    } else {
-      -Inf
-    }
-  })
-  
-  if(log) {
-    return(out)
-  } else {
-    return(exp(out))
-  }
-}
-
-curve(dlater(rt=x, 1, c(0.6, 0.4), c(0.2, 0.2), c(0.5, 0.5), 0.1), from = 0, to = 3)
-
-plater <- function(rt, response, nu, sigma, alpha, t0, log.p = FALSE){
-  out <- sapply(rt, function(rt_) {
-    log(integrate(dlater, lower = 0, upper = rt_, response=response, nu=nu, sigma=sigma, alpha=alpha, t0=t0)$value)
-  })
-  
-  if(log.p){
-    return(out)
-  } else{
-    return(exp(out))
-  }
-}
-
-curve(plater(rt=x, 1, c(0.7, 0.3), c(0.5, 0.5), c(0.5, 0.5), 0.1), from = 0, to = 3)
 
 #### Read data and models -----
 hmm_later_prior_pred <- cmdstan_model(stan_file = here("stan", "later", "hmm_later_prior_pred.stan"), include_paths = here()) 
@@ -117,10 +80,10 @@ for(subject in LETTERS[1:11]){
   
   # plot model based cumulative rt distributions
   df <- expand.grid(
-    rt          = seq(0, max(data$rt), length.out = 25),
+    rt          = seq(0, max(data$rt), length.out = 20),
     accumulator = 1:2,
     state       = 1:2,
-    .draw       = random_draws[1:500],
+    .draw       = random_draws[1:400],
     KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
 
   # compute the cumulative rt distributions
