@@ -57,6 +57,13 @@ rt <- generated_data$draws("rt")
 responses <- generated_data$draws("responses")
 state <- generated_data$draws("state")
 
+# average run length
+run_lengths <- sapply(1:dim(state)[1], function(x) mean(rle(as.vector(state[x,,]))$lengths))
+summary(run_lengths)
+sd(run_lengths)
+mean(run_lengths > 5 & run_lengths < 15)
+#
+
 ### Parameter recovery ----
 parameters <- c("nu_vec[1,1]", "nu_vec[2,1]", "sigma", "alpha", "t0", "init_prob[1]", "tran_prob[1,1]", "tran_prob[2,2]")
 generating_parameters <- as_tibble(posterior::as_draws_df(generated_data$draws(parameters)))
