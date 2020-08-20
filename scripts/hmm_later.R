@@ -61,7 +61,6 @@ state <- generated_data$draws("state")
 run_lengths <- sapply(1:dim(state)[1], function(x) mean(rle(as.vector(state[x,,]))$lengths))
 summary(run_lengths)
 sd(run_lengths)
-mean(run_lengths > 5 & run_lengths < 15)
 #
 
 ### Parameter recovery ----
@@ -136,20 +135,37 @@ parameters_names <- colnames(estimated_parameters)
 #   estimated_parameters[i,] <- as.list(map(stan_data, as.vector(state[i,1,])))
 #   pb$tick()$print()
 # }
+# saveRDS(estimated_parameters, file = here("saves", "map_estimates_simulation.Rds"))
+estimated_parameters <- readRDS(here("saves", "map_estimates_simulation.Rds"))
 
+parameters_labels <- c("nu[1]^(1)", "nu[1]^(2)", "sigma", "alpha^(1)", "alpha^(2)", "tau", "pi[1]", "rho[11]", "rho[22]")
+names(parameters_labels) <- parameters_names
+
+# MAP estimation parameter recovery results:
+png(here("figures", "simulations", "parameter_recovery_map.png"), 
+    pointsize = 25, width = 750, height = 750)
 mean(complete.cases(estimated_parameters))
 kk <- sqrt(length(parameters_names))
-par(mfrow = c(floor(kk), ceiling(kk)))
+par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
 for(p in parameters_names){
   x <- generating_parameters[,p,drop=TRUE]
   y <- estimated_parameters[,p,drop=TRUE]
-  plot(x, y, pch = 19, xlab = "True", ylab = "Estimated", main = char2label(p), 
-       xlim = range(c(x, y), na.rm = TRUE), 
-       ylim = range(c(x, y), na.rm = TRUE))
-  abline(0, 1)
-  #rug(generating_parameters[,p,drop=TRUE], col = (!complete.cases(estimated_parameters)) + 1)
+  lims <- range(c(x, y), na.rm = TRUE)
+  plot(x, y, pch = 19, xlab = "", ylab = "", main = "", 
+       xlim = lims, ylim = lims, col = adjustcolor("black", alpha = 0.3))
+  title(char2label(parameters_labels[p]), line = 1, cex.main = 1.5)
+  abline(0, 1, lwd = 3)
+  
+  corr <- round(cor(x, y, use = "p"), 2)
+  text(x = seq(lims[1], lims[2], length.out = 10)[8], 
+       y = seq(lims[1], lims[2], length.out = 10)[2], 
+       bquote("r" == .(corr))
+       )
 }
+mtext("True", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
+mtext("Estimated", side = 2, outer = TRUE, ad = 0.51, line = -0.5)
 par(mfrow = c(1, 1))
+dev.off()
 
 ### Using full Bayes ----
 # run run_fit_sbc.sh script
