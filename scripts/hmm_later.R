@@ -191,6 +191,9 @@ draws <- lapply(seq_along(saved_fits), function(i) {
 })
 draws <- bind_rows(draws)
 
+mean(draws$good_labels)
+mean(draws$good_psrf)
+
 # for each parameter draw from prior, compute the probability that it is larger than a random draw from a posterior
 p_ecdf <- estimated_parameters
 for(par in parameters_names){
@@ -228,8 +231,10 @@ posterior_summaries <- draws %>%
   summarise(mean_post = mean(estimated_value),
             variance_post = var(estimated_value),
             std_dev_post = sd(estimated_value), 
+            q10 = quantile(estimated_value, 0.10),
             q25 = quantile(estimated_value, 0.25),
-            q75 = quantile(estimated_value, 0.75)) %>%
+            q75 = quantile(estimated_value, 0.75),
+            q90 = quantile(estimated_value, 0.90)) %>%
   ungroup() %>%
   left_join(
     generating_parameters %>% 
@@ -248,7 +253,8 @@ posterior_summaries <- draws %>%
   ) %>% 
   mutate(z_score = (mean_post - true_value) / std_dev_post,
          contraction = 1 - variance_post/variance_prior,
-         covered = true_value > q25 & true_value < q75)
+         covered50 = true_value > q25 & true_value < q75,
+         covered80 = true_value > q10 & true_value < q90)
   
 posterior_summaries %>% 
   #subset(z_score < 5 & z_score > -5) %>%
@@ -258,6 +264,9 @@ posterior_summaries %>%
   facet_wrap(.~parameter, scales = "fixed") + 
   theme_bw()
 
+
+# Posterior expectation parameter recovery results:
+# quick gg plot
 posterior_summaries %>%
   ggplot(aes(x = true_value, y = mean_post)) +
   geom_abline(intercept = 0, slope = 1) +
@@ -265,9 +274,68 @@ posterior_summaries %>%
   facet_wrap(.~parameter, scales = "free") + 
   theme_bw()
 
-posterior_summaries %>% 
-  group_by(parameter) %>%
-  summarise(perc_covered = mean(covered))
+png(here("figures", "simulations", "parameter_recovery_mean.png"), 
+    pointsize = 25, width = 750, height = 750)
+kk <- sqrt(length(parameters_names))
+par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
+for(p in parameters_names){
+  x <- subset(posterior_summaries, subset = parameter == p)[["true_value"]]
+  y <- subset(posterior_summaries, subset = parameter == p)[["mean_post"]]
+  #browser()
+  lims <- range(c(x, y), na.rm = TRUE)
+  plot(x, y, pch = 19, xlab = "", ylab = "", main = "", 
+       xlim = lims, ylim = lims, col = adjustcolor("black", alpha = 0.3))
+  title(char2label(parameters_labels[p]), line = 1, cex.main = 1.5)
+  abline(0, 1, lwd = 3)
+  
+  corr <- round(cor(x, y, use = "p"), 2)
+  text(x = seq(lims[1], lims[2], length.out = 10)[8], 
+       y = seq(lims[1], lims[2], length.out = 10)[2], 
+       bquote("r" == .(corr))
+  )
+}
+mtext("True", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
+mtext("Estimated", side = 2, outer = TRUE, ad = 0.51, line = -0.5)
+par(mfrow = c(1, 1))
+dev.off()
+
+
+jeffreys <- function(covered, p){
+  a <- sum( covered, na.rm = TRUE)
+  b <- sum(!covered, na.rm = TRUE)
+  
+  qbeta(p = p, a + 1/2, b + 1/2)
+}
+coverage <- posterior_summaries %>% 
+  mutate(par_label = parameters_labels[parameter]) %>%
+  group_by(par_label) %>%
+  summarise(point50 = mean(covered50), lower50 = jeffreys(covered50, 0.025), upper50 = jeffreys(covered50, 0.975),
+            point80 = mean(covered80), lower80 = jeffreys(covered80, 0.025), upper80 = jeffreys(covered80, 0.975))
+coverage <- coverage[match(parameters_labels, coverage$par_label), ] # reorder rows
+# |par_label |         point50| lower50| upper50|         point80| lower80| upper80|
+# |:---------|---------------:|-------:|-------:|---------------:|-------:|-------:|
+# |nu[1]^(1) |           0.519|   0.487|   0.550|           0.790|   0.764|   0.816|
+# |nu[1]^(2) |           0.480|   0.449|   0.512|           0.792|   0.765|   0.817|
+# |sigma     |           0.507|   0.475|   0.539|           0.824|   0.799|   0.848|
+# |alpha^(1) |           0.487|   0.455|   0.519|           0.783|   0.756|   0.808|
+# |alpha^(2) |           0.509|   0.477|   0.541|           0.812|   0.786|   0.836|
+# |tau       |           0.501|   0.469|   0.532|           0.814|   0.788|   0.838|
+# |pi[1]     |           0.487|   0.455|   0.519|           0.803|   0.777|   0.828|
+# |rho[11]   |           0.525|   0.493|   0.557|           0.833|   0.808|   0.856|
+# |rho[22]   |           0.507|   0.475|   0.539|           0.799|   0.772|   0.824|
+
+# LaTeX for paper
+coverage %>%
+  mutate(par_label = sprintf("$\\%s$", par_label)) %>%
+  mutate(par_label = gsub("\\[", "_{", par_label)) %>%
+  mutate(par_label = gsub("\\]", "}",  par_label)) %>%
+  mutate(par_label = gsub("\\(", "{(", par_label)) %>%
+  mutate(par_label = gsub("\\)", ")}",  par_label)) %>%
+  mutate(cov50 = sprintf("%0.2f [%0.2f, %0.2f]", point50, lower50, upper50),
+         cov80 = sprintf("%0.2f [%0.2f, %0.2f]", point80, lower80, upper80)) %>%
+  dplyr::select(par_label, cov50, cov80) %>%
+  knitr::kable(digits = 2, escape = FALSE, format = "latex", booktabs = TRUE)
+
 #### 
 # stan_data <- hyperparams
 # stan_data$N_obs <- nrow(tdA)
