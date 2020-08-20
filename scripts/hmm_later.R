@@ -191,19 +191,35 @@ draws <- lapply(seq_along(saved_fits), function(i) {
 })
 draws <- bind_rows(draws)
 
+# for each parameter draw from prior, compute the probability that it is larger than a random draw from a posterior
 p_ecdf <- estimated_parameters
-
-# for each parameter draw from prior, compute the probability that it is larger than a random draw from a data averaaged posterior
-par(mfrow = c(floor(kk), ceiling(kk)))
 for(par in parameters_names){
   for(i in seq_len(n_predictive)){
-    p_ecdf[[par]][[i]] <- mean(generating_parameters[[par]][[i]] > draws[[par]])
+    p_ecdf[[par]][[i]] <- mean(generating_parameters[[par]][[i]] > subset(draws, .sim == i)[[par]])
   }
-  
-  hist(p_ecdf[[par]], breaks = seq(0, 1, 0.1), main = char2label(par), xlab = "", ylab = "Frequency", freq = TRUE)
 }
-par(mfrow = c(1,1))
 
+png(filename = here("figures", "simulations", "sbc_density.png"), pointsize = 25, width = 750, height = 750)
+par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(0, 1.5, 0.5, 0))
+for(par in parameters_names){
+  hist(p_ecdf[[par]], breaks = seq(0, 1, 0.1), main = "", xlab = "", ylab = "",
+       freq = TRUE, col = "gray")
+  title(char2label(parameters_labels[par]), line = 1, cex.main = 1.5)
+}
+mtext("Frequency", side = 2, outer = TRUE, ad = 0.51, line = -0.5)
+par(mfrow = c(1,1))
+dev.off()
+
+png(filename = here("figures", "simulations", "sbc_cumulative.png"), pointsize = 25, width = 750, height = 750)
+par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(0, 1.5, 0.5, 0))
+for(par in parameters_names){
+  plot(ecdf(p_ecdf[[par]]), main = "", xlab = "", ylab = "")
+  title(char2label(parameters_labels[par]), line = 1.2, cex.main = 1.5)
+  abline(a = 0, b = 1, col = "red", lty = 2, lwd = 3)
+}
+mtext("ECDF", side = 2, outer = TRUE, ad = 0.51, line = -0.5)
+par(mfrow = c(1,1))
+dev.off()
 
 posterior_summaries <- draws %>%
   subset(good_labels) %>%
