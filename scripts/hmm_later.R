@@ -264,6 +264,24 @@ posterior_summaries %>%
   facet_wrap(.~parameter, scales = "fixed") + 
   theme_bw()
 
+png(here("figures", "simulations", "sensitivity_fixed.png"), pointsize = 25, width = 750, height = 750)
+kk <- sqrt(length(parameters_names))
+par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
+xlim <- range(posterior_summaries$contraction)
+ylim <- range(posterior_summaries$z_score)
+for(p in parameters_names){
+  x <- subset(posterior_summaries, subset = parameter == p)[["contraction"]]
+  y <- subset(posterior_summaries, subset = parameter == p)[["z_score"]]
+  
+  plot(x, y, pch = 19, xlab = "", ylab = "", main = "", 
+       xlim = xlim, ylim = ylim, col = adjustcolor("black", alpha = 0.3))
+  title(char2label(parameters_labels[p]), line = 1, cex.main = 1.5)
+  abline(h = 0, v = 0, col = adjustcolor("black", alpha = 0.5), lwd = 2, lty = 2)
+}
+mtext("Posterior contraction", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
+mtext("Posterior z-score", side = 2, outer = TRUE, adj = 0.51, line = -0.5)
+par(mfrow = c(1, 1))
+dev.off()
 
 # Posterior expectation parameter recovery results:
 # quick gg plot
@@ -295,7 +313,7 @@ for(p in parameters_names){
   )
 }
 mtext("True", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
-mtext("Estimated", side = 2, outer = TRUE, ad = 0.51, line = -0.5)
+mtext("Estimated", side = 2, outer = TRUE, adj = 0.51, line = -0.5)
 par(mfrow = c(1, 1))
 dev.off()
 
