@@ -194,34 +194,67 @@ draws <- bind_rows(draws)
 mean(draws$good_labels)
 mean(draws$good_psrf)
 
+thin <- 50
+n_sbc_count <- 1000/thin
+counts <- counts
 # for each parameter draw from prior, compute the probability that it is larger than a random draw from a posterior
 p_ecdf <- estimated_parameters
 for(par in parameters_names){
   for(i in seq_len(n_predictive)){
-    p_ecdf[[par]][[i]] <- mean(generating_parameters[[par]][[i]] > subset(draws, .sim == i)[[par]])
+    p_ecdf[[par]][[i]] <- sum(generating_parameters[[par]][[i]] > subset(draws, .sim == i & .draw %% thin == 0)[[par]])
   }
 }
 
+# plot sbc ranks as histogram
 png(filename = here("figures", "simulations", "sbc_density.png"), pointsize = 25, width = 750, height = 750)
-par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(0, 1.5, 0.5, 0))
+par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
 for(par in parameters_names){
-  hist(p_ecdf[[par]], breaks = seq(0, 1, 0.1), main = "", xlab = "", ylab = "",
-       freq = TRUE, col = "gray")
+  hist(p_ecdf[[par]], breaks = seq(0, 1 + n_sbc_count, by = 1) - 0.5, main = "", xlab = "", ylab = "",
+       freq = TRUE, col = "gray", ylim = c(0, 80))
+  abline(h = qbinom(0.975, 1000, thin/1000), lwd = 2, lty = 2)
+  abline(h = qbinom(0.025, 1000, thin/1000), lwd = 2, lty = 2)
   title(char2label(parameters_labels[par]), line = 1, cex.main = 1.5)
 }
-mtext("Frequency", side = 2, outer = TRUE, ad = 0.51, line = -0.5)
+mtext("Rank statistic", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
+mtext("Frequency", side = 2, outer = TRUE, adj = 0.51, line = -0.5)
 par(mfrow = c(1,1))
 dev.off()
 
+# plot cumulative SBC
 png(filename = here("figures", "simulations", "sbc_cumulative.png"), pointsize = 25, width = 750, height = 750)
-par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(0, 1.5, 0.5, 0))
+par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
+# compute theoretical 95%CIs
+sim_cum_unif <- t(replicate(1e4, ecdf(sample(counts, size = 1000, replace = TRUE))(counts)))
+lower <- apply(sim_cum_unif, 2, quantile, 0.025)
+upper <- apply(sim_cum_unif, 2, quantile, 0.975)
+# plot ecdf + cis
 for(par in parameters_names){
-  plot(ecdf(p_ecdf[[par]]), main = "", xlab = "", ylab = "")
+  plot(c(0, n_sbc_count), 0:1, type = "n", main = "", xlab = "", ylab = "")
+  polygon(c(rev(counts), counts), c(rev(lower), upper), col = "gray", lty = 0)
+  lines(ecdf(p_ecdf[[par]]), cex = 0.7)
   title(char2label(parameters_labels[par]), line = 1.2, cex.main = 1.5)
-  abline(a = 0, b = 1, col = "red", lty = 2, lwd = 3)
 }
-mtext("ECDF", side = 2, outer = TRUE, ad = 0.51, line = -0.5)
+mtext("Rank statistic", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
+mtext("ECDF", side = 2, outer = TRUE, adj = 0.51, line = -0.5)
 par(mfrow = c(1,1))
+dev.off()
+
+# plot difference between cumulative and theoretical
+png(filename = here("figures", "simulations", "sbc_diff.png"), pointsize = 25, width = 750, height = 750)
+par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
+diff_sim_cum_unif <- sweep(sim_cum_unif, 2, colMeans(sim_cum_unif), "-")
+lower <- apply(diff_sim_cum_unif, 2, quantile, 0.025)
+upper <- apply(diff_sim_cum_unif, 2, quantile, 0.975)
+for(par in parameters_names){
+  y <- ecdf(p_ecdf[[par]])(counts) - colMeans(sim_cum_unif)
+  plot(c(0, n_sbc_count), range(c(y, lower, upper)), type = "n", main = "", xlab = "", ylab = "", bty = "n")
+  polygon(c(rev(counts), counts), c(rev(lower), upper), col = "gray", lty = 0)
+  lines(counts, y, cex = 0.7, lwd = 3)
+  abline(h = 0, lty = 2, lwd = 2)
+  title(char2label(parameters_labels[par]), line = 1.2, cex.main = 1.5)
+}
+mtext("Rank statistic", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
+mtext("ECDF difference", side = 2, outer = TRUE, adj = 0.51, line = -0.5)
 dev.off()
 
 posterior_summaries <- draws %>%
@@ -264,6 +297,7 @@ posterior_summaries %>%
   facet_wrap(.~parameter, scales = "fixed") + 
   theme_bw()
 
+# plot sensitivity analyses: all axes are hold equal for all parameters
 png(here("figures", "simulations", "sensitivity_fixed.png"), pointsize = 25, width = 750, height = 750)
 kk <- sqrt(length(parameters_names))
 par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
@@ -273,6 +307,26 @@ for(p in parameters_names){
   x <- subset(posterior_summaries, subset = parameter == p)[["contraction"]]
   y <- subset(posterior_summaries, subset = parameter == p)[["z_score"]]
   
+  plot(x, y, pch = 19, xlab = "", ylab = "", main = "", 
+       xlim = xlim, ylim = ylim, col = adjustcolor("black", alpha = 0.3))
+  title(char2label(parameters_labels[p]), line = 1, cex.main = 1.5)
+  abline(h = 0, v = 0, col = adjustcolor("black", alpha = 0.5), lwd = 2, lty = 2)
+}
+mtext("Posterior contraction", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
+mtext("Posterior z-score", side = 2, outer = TRUE, adj = 0.51, line = -0.5)
+par(mfrow = c(1, 1))
+dev.off()
+
+# plot sensitivity analyses: axes are set for each parameter separately
+png(here("figures", "simulations", "sensitivity_free.png"), pointsize = 25, width = 750, height = 750)
+kk <- sqrt(length(parameters_names))
+par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
+for(p in parameters_names){
+  x <- subset(posterior_summaries, subset = parameter == p)[["contraction"]]
+  y <- subset(posterior_summaries, subset = parameter == p)[["z_score"]]
+  
+  xlim <- range(x)
+  ylim <- range(y)
   plot(x, y, pch = 19, xlab = "", ylab = "", main = "", 
        xlim = xlim, ylim = ylim, col = adjustcolor("black", alpha = 0.3))
   title(char2label(parameters_labels[p]), line = 1, cex.main = 1.5)
