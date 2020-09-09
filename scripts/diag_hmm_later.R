@@ -12,10 +12,13 @@ source(here("R", "expose_stan_functions.R"))
 #### Read data and models -----
 hmm_later_prior_pred <- cmdstan_model(stan_file = here("stan", "later", "hmm_later_prior_pred.stan"), include_paths = here()) 
 hmm_later <- cmdstan_model(stan_file = here("stan", "later", "hmm_later.stan"), include_paths = here())
-parameters <- c("nu_vec[1,1]", "nu_vec[2,1]", "alpha", "sigma", "t0")
+parameters       <- c("nu_vec[1,1]", "nu_vec[2,1]",  "alpha",  "sigma",   "t0", "init_prob[1]", "tran_prob[1,1]", "tran_prob[2,2]")
+parameters_latex <- c("\\nu_1^{(1)}", "\\nu_1^{(2)}", "\\alpha^{(1)}", "\\alpha^{(2)}", "\\sigma", "\\tau", "\\pi_1",        "\\rho_{11}",      "\\rho_{22}")
+parameters_latex <- sprintf("$%s$", parameters_latex)
+samples_list <- list()
 
 for(subject in LETTERS[1:11]){
-  cat("===== Subject", subject, " =====\n")
+  cat("===== Subject", subject, "=====\n")
   data <- readr::read_csv(here::here("data", sprintf("dutilh_2010_subject_%s.csv", subject)), 
                           col_types = cols(
                             pacc = col_double(),
@@ -26,9 +29,10 @@ for(subject in LETTERS[1:11]){
   
   #### Get MCMC samples
   samples <- readRDS(here("saves", "fit_hmm_later", sprintf("dutilh_2010_subject_%s.Rds", subject)))
-  samples$summary(variables = c("nu_vec[1,1]", "nu_vec[2,1]", "alpha", "sigma", "t0")) %>% print()
+  samples_list[[subject]] <- samples
+  samples$summary(variables = parameters) %>% print()
   
-  traceplot <- bayesplot::mcmc_trace(samples$draws(variables = parameters), facet_args = list(ncol = 2)) +
+  traceplot <- bayesplot::mcmc_trace(samples$draws(variables = parameters), facet_args = list(ncol = 3)) +
     ggplot2::ggtitle(sprintf("Subject %s", subject))
   ggplot2::ggsave(filename = here("figures", "traceplots", sprintf("dutilh_2010_subject_%s.png", subject)))
   
@@ -125,3 +129,22 @@ for(subject in LETTERS[1:11]){
   ggplot2::ggsave(filename = here("figures", "cum_plots", sprintf("dutilh_2010_subject_%s.png", subject)))
 
 }
+
+
+samples_list[["K"]]$summary(variables = parameters) %>% 
+  rename("Parameter"  = "variable",
+         "Mean"       = "mean",
+         "Median"     = "median",
+         "SD"         = "sd",
+         "5\\%"       = "q5",
+         "95\\%"      = "q95",
+         "$\\hat{R}$" = "rhat",
+         "Bulk"       = "ess_bulk",
+         "Tail"       = "ess_tail") %>%
+  select(-mad) %>%
+  mutate(Parameter=parameters_latex) %>%
+  knitr::kable(digits  = c(0, 2, 2, 2, 2, 2, 3, 0, 0),
+               format  = "latex", booktabs = TRUE, escape = FALSE, linesep = c('', '', '', '', '', '\\addlinespace'),
+               caption = "Descriptives of the posterior draws for Participant K from \\citet{dutilh2011phase}.",
+               label   = "tab:pars_K") %>%
+  kableExtra::add_header_above(c(" " = 4, "Quantile" = 2, " " = 1, "ESS" = 2))
