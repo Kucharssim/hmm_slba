@@ -319,3 +319,38 @@ samples_list[["K"]]$summary(variables = parameters) %>%
                caption = "Descriptives of the posterior draws for Participant K from \\citet{dutilh2011phase}.",
                label   = "tab:pars_K") %>%
   kableExtra::add_header_above(c(" " = 4, "Quantile" = 2, " " = 1, "ESS" = 2))
+
+
+samples_all <- list()
+
+for(subject in LETTERS[1:11]){
+  samples_all[[subject]] <- samples_list[[subject]]$draws(variables = parameters) %>%
+    as_draws_df() %>%
+    as_tibble() %>%
+    subset(.draw <= 1000) %>%
+    mutate(.subject = subject) %>%
+    pivot_longer(cols = !starts_with("."), names_to = "parameter", values_to = "value")
+}
+
+samples_all <- bind_rows(samples_all)
+
+tradeoff <- samples_all %>%
+  subset(parameter %in% c("nu_vec[1,1]", "nu_vec[2,1]", "alpha[1]", "alpha[2]")) %>%
+  mutate(parameter = gsub("(|,1|,2)]", "", parameter)) %>%
+  separate(col = parameter, into = c("parameter", "state"), sep = "\\[", convert = TRUE) %>%
+  pivot_wider(id_cols = c(".draw", ".subject", "parameter", "state"), names_from = parameter, values_from = value) 
+
+summary_tradeoff <- tradeoff %>% 
+  group_by(.subject, state) %>%
+  summarise(alpha = mean(alpha), nu_vec = mean(nu_vec))
+
+ggplot(tradeoff, aes(x=alpha, y=nu_vec, col=.subject, shape=as.factor(state))) +
+  geom_point(alpha = 0.1) +
+  geom_point(data = summary_tradeoff, size = 2, col = "black") +
+  geom_line(data = summary_tradeoff, aes(group = .subject), col = "black") +
+  xlim(0, NA) + # ylim(NA, 1) + 
+  xlab(expression(alpha)) + ylab(expression(nu[1])) +
+  theme_light() +
+  theme(text = element_text(size = 18), legend.title = element_blank(), legend.position = "none")
+ggsave(filename = here("figures", "dutilh_2010_tradeoff.png"), width = 15, height = 15, unit = "cm")
+  
