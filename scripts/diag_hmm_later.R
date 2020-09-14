@@ -297,7 +297,7 @@ for(subject in LETTERS[1:11]){
       theme_light() +
       theme(text = element_text(size = 20), legend.title = element_blank(), legend.position = "none")
   ggplot2::ggsave(plot = pdf_plot, filename = here("figures", "pdf_plots", sprintf("dutilh_2010_subject_%s.png", subject)),
-                  width = 25, height = 15, units = "cm")
+                  width = 25, height = 10, units = "cm")
   
 }
 
