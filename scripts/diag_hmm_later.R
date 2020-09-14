@@ -76,6 +76,7 @@ for(subject in LETTERS[1:11]){
   
   #### Get MCMC samples
   samples <- readRDS(here("saves", "fit_hmm_later", sprintf("dutilh_2010_subject_%s.Rds", subject)))
+  cat("divergent transitions:", sum(samples$sampler_diagnostics()[,,5]), "\n")
   samples_list[[subject]] <- samples
   samples$summary(variables = parameters) %>% print()
   
