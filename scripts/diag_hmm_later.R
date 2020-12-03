@@ -170,6 +170,24 @@ for(subject in LETTERS[1:11]){
                   filename = here("figures", "post_pred_rt", sprintf("dutilh_2010_subject_%s.png", subject)),
                   width = 20, height = 7.5, units = "cm")
   
+  post_pred_rt_subset_trials_plot <- post_pred %>%
+    filter(obs <= 300) %>%
+    group_by(obs) %>%
+    summarise(median = median(rt), 
+              lower80 = quantile(rt, 0.1),  upper80 = quantile(rt, 0.9),
+              lower50 = quantile(rt, 0.25), upper50 = quantile(rt, 0.75)) %>%
+    ggplot(aes(x=obs, y=median)) +
+    geom_ribbon(mapping = aes(x=obs, ymin=lower80, ymax=upper80), inherit.aes = FALSE, fill = "#DCBCBC", alpha = 0.7) +
+    geom_ribbon(mapping = aes(x=obs, ymin=lower50, ymax=upper50), inherit.aes = FALSE, fill = "#B97C7C", alpha = 0.7) +
+    geom_line(col = "#8F2727", size = 1) + 
+    geom_line(aes(x=obs, y=rt), data = filter(data, obs <= 300), inherit.aes = FALSE, col = "black", size = 0.75) +
+    xlab("Trial") + ylab("Response time (sec)") + ggtitle(sprintf("Participant %s", subject)) +
+    theme_light() +
+    theme(text = element_text(size = 15), legend.title = element_blank(), legend.position = "none")
+  ggplot2::ggsave(plot = post_pred_rt_subset_trials_plot, 
+                  filename = here("figures", "post_pred_rt_subset_trials", sprintf("dutilh_2010_subject_%s.png", subject)),
+                  width = 20, height = 7.5, units = "cm")
+  
   post_pred_response_plot <- post_pred %>%
     group_by(obs) %>%
     summarise(mean = mean(accumulator == 1)) %>%
@@ -184,6 +202,23 @@ for(subject in LETTERS[1:11]){
     theme(text = element_text(size = 15), legend.title = element_blank(), legend.position = "none")
   ggplot2::ggsave(plot = post_pred_response_plot, 
                   filename = here("figures", "post_pred_response", sprintf("dutilh_2010_subject_%s.png", subject)),
+                  width = 20, height = 7.5, units = "cm")
+  
+  post_pred_response_subset_trials_plot <- post_pred %>%
+    filter(obs <= 300) %>%
+    group_by(obs) %>%
+    summarise(mean = mean(accumulator == 1)) %>%
+    ungroup() %>%
+    ggplot(aes(x=obs,y=mean)) +
+    geom_line(col = "#8F2727", size = 1) +
+    geom_line(mapping = aes(x = obs, y = ma), data = data %>% filter(obs <= 300) %>% mutate(ma = forecast::ma(ifelse(accumulator==1, 1, 0), 10)), inherit.aes = FALSE, size = 1) + 
+    geom_point(mapping = aes(x=obs, y=ifelse(accumulator==1, 1, 0)), data = data %>% filter(obs <= 300), inherit.aes = FALSE, size = 0.5) +
+    xlab("Trial") + ylab("Response") + ggtitle(sprintf("Participant %s", subject)) +
+    ylim(0, 1) +
+    theme_light() +
+    theme(text = element_text(size = 15), legend.title = element_blank(), legend.position = "none")
+  ggplot2::ggsave(plot = post_pred_response_subset_trials_plot, 
+                  filename = here("figures", "post_pred_response_subset_trials", sprintf("dutilh_2010_subject_%s.png", subject)),
                   width = 20, height = 7.5, units = "cm")
   
   # plot empirical cumulative rt distributions scaled by proportions of correct/incorrect and state1/state2
