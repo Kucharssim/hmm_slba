@@ -2,7 +2,7 @@ args <- commandArgs(trailingOnly = TRUE)
 subject <- as.character(args[1])
 
 library(cmdstanr)
-set_cmdstan_path("~/.cmdstan/cmdstan-2.24.0-rc1/")
+set_cmdstan_path(readRDS("path_to_cmdstan.Rds"))
 cmdstan_version()
 library(here)
 

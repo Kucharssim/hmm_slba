@@ -5,7 +5,7 @@ iter <- as.integer(args[1])
 if(!is.na(iter)) cat("iteration:", iter, "\n") else stop("invalid iteration number\n")
 
 library(cmdstanr)
-set_cmdstan_path("~/.cmdstan/cmdstan-2.24.0-rc1/")
+set_cmdstan_path(readRDS("path_to_cmdstan.Rds"))
 cmdstan_version()
 library(here)
 
