@@ -64,6 +64,7 @@ parameters_latex <- c("\\nu_1^{(1)}", "\\nu_1^{(2)}", "\\alpha^{(1)}", "\\alpha^
 parameters_latex <- sprintf("$%s$", parameters_latex)
 samples_list <- list()
 
+# compute results for all 11 participants
 for(subject in LETTERS[1:11]){
   cat("===== Subject", subject, "=====\n")
   data <- readr::read_csv(here::here("data", sprintf("dutilh_2010_subject_%s.csv", subject)), 
@@ -337,7 +338,7 @@ for(subject in LETTERS[1:11]){
   
 }
 
-
+# plot between-state trade-off ----
 samples_list[["K"]]$summary(variables = parameters) %>% 
   rename("Parameter"  = "variable",
          "Mean"       = "mean",
