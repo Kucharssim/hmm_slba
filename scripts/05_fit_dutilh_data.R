@@ -1,3 +1,6 @@
+# A script to fit a single participant from the Dutilh study
+# run from terminal. To fit subject "A", run the script using command:
+# Rscript --vanilla scripts/05_fit_dutilh_data.R A
 args <- commandArgs(trailingOnly = TRUE)
 subject <- as.character(args[1])
 
