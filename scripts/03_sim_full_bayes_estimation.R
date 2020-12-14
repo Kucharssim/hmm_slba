@@ -1,3 +1,7 @@
+# prerequisites: 01_prior_predictives was run
+# the simulation iteration nr. x (x between 1 and 1000) can be run from terminal as 
+# Rscript --vanilla scripts/03_full_bayes_estimation.R x
+# the bash script "run_fit_sbc.sh" runs all simulation iterations in succession
 args <- commandArgs(trailingOnly = TRUE)
 iter <- as.integer(args[1])
 
@@ -9,8 +13,11 @@ set_cmdstan_path(readRDS("path_to_cmdstan.Rds"))
 cmdstan_version()
 library(here)
 
+# stan models that are used in this script
 hmm_later_prior_pred <- cmdstan_model(stan_file = here("stan", "later", "hmm_later_prior_pred.stan"), include_paths = here()) 
 hmm_later <- cmdstan_model(stan_file = here("stan", "later", "hmm_later.stan"), include_paths = here())
+
+# load the prior predictive data
 generated_data <- readRDS(here("saves", "prior_predictives.Rds"))
 
 
@@ -19,6 +26,7 @@ stan_data   <- hyperparams
 stan_data$rt <- as.vector(generated_data$draws("rt")[iter,])
 stan_data$responses <- as.vector(generated_data$draws("responses")[iter,])
 
+# function to generate starting values from the priors
 initFun <- function(){
   prior <- hmm_later_prior_pred$sample(data = hyperparams, iter_warmup = 0, iter_sampling = 1, fixed_param = TRUE)
   out <- list(
@@ -40,6 +48,10 @@ quiet <- function(x) {
   invisible(force(x)) 
 } 
 
+# mcmc fitting
+# 1) fit the model 
+# 2) check if model label switched (against true states), refit the model if it did
+# 3) repeat at maximum five times, then terminate, otherwise save the results into a separate file 
 mcmc <- function(iter, stan_data, true_states, max_tries = 5){
   finished <- FALSE
   i <- 1

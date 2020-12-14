@@ -3,14 +3,20 @@ set_cmdstan_path(readRDS("path_to_cmdstan.Rds"))
 cmdstan_version()
 library(here)
 
-### Parameter recovery ----
+generated_data <- readRDS(here("saves", "prior_predictives.Rds"))
 # we are interested in the following 9 parameters:
 parameters <- c("nu_vec[1,1]", "nu_vec[2,1]", "sigma", "alpha", "t0", "init_prob[1]", "tran_prob[1,1]", "tran_prob[2,2]")
 generating_parameters <- as_tibble(posterior::as_draws_df(generated_data$draws(parameters)))
-# load the stan model to fit the data
+# load the stan model to fit the data and to generate from priors
+hmm_later_prior_pred <- cmdstan_model(stan_file = here("stan", "later", "hmm_later_prior_pred.stan"), include_paths = here()) 
 hmm_later <- cmdstan_model(stan_file = here("stan", "later", "hmm_later.stan"), include_paths = here())
 # load the hyperparameters (for prior specs)
 hyperparams <- readRDS(here("saves", "hyperparams.Rds"))
+
+estimated_parameters <- dplyr::select(generating_parameters, -c(".chain", ".iteration", ".draw"))
+parameters_names <- colnames(estimated_parameters)
+parameters_labels <- c("nu[1]^(1)", "nu[1]^(2)", "sigma", "alpha^(1)", "alpha^(2)", "tau", "pi[1]", "rho[11]", "rho[22]")
+names(parameters_labels) <- parameters_names
 
 # function that generates random starting values using the priors -----
 initFun <- function(){

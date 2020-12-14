@@ -1,11 +1,15 @@
+# sample script that checks that general HMM strucure is implemented correctly
+# the model hmm_normal.stan implements hidden Markov model with manually written forward algorithm
+# the model hmm_normal2.stan uses the hmm_marginal_lpdf() implemented in CmdStan since 2.24.0
+# the purpose of this script is to run both models to check that the hmm_marginal_lpdf() was interpreted correctly
 library(here)
 library(cmdstanr)
 library(posterior)
 library(tidyverse)
 library(patchwork)
+library(rstan)
+set_cmdstan_path(readRDS("path_to_cmdstan.Rds"))
 cmdstan_version()
-set_cmdstan_path("/Users/skuchar/.cmdstan/cmdstan")
-set_cmdstan_path("/Users/skuchar/.cmdstan/cmdstan-2.24.0-rc1/")
 cmdstan_version()
 
 model <- cmdstanr::cmdstan_model(here::here("stan", "normal.stan"))
@@ -59,8 +63,6 @@ state_prob %>%
   ggplot2::geom_ribbon(ggplot2::aes(ymin=q5, ymax=q95), alpha = 0.5, lwd=0) +
   patchwork::plot_layout(nrow = 2)
 
-
-library(rstan)
 rstan_model <- rstan::stan_model(here::here("stan", "hmm_normal.stan"))
 rstan_fit   <- rstan::sampling(rstan_model, hmm_data, cores=4,chains=4)
 
