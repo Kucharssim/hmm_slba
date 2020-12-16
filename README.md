@@ -6,7 +6,7 @@
 
 This repository is associated with the article
 
-> Kucharský Š., Tran, N.-H., Veldkamp, K., Raijmakers, M.E.J., & Visser, I. (submitted) Hidden Markov Models of Ecidence Accumulation in Speeded Decision Tasks. Preprint at *PsyArXiv*.
+> Kucharský, Š., Tran, N., Veldkamp, K., Raijmakers, M. E. J., & Visser, I. (2020, December 16). Hidden Markov Models of Evidence Accumulation in Speeded Decision Tasks. Retrieved from [psyarxiv.com/yzn2d](https:://www.psyarxiv.com/yzn2d)
 
 ### Dependencies (setting up correct version of Stan)
 
