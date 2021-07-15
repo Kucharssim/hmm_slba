@@ -19,7 +19,8 @@ set\_cmdstan\_path(readRDS("path\_to\_cmdstan.Rds"))
 The object `path\_to\_cmdstan.Rds` actually contains just a string that specifies the folder where the appropriate version of CmdStan is installed:
 
  ```
- > readRDS("path\_to\_cmdstan.Rds")[1] "~/.cmdstan/cmdstan-2.24.0-rc1/"
+ > readRDS("path\_to\_cmdstan.Rds")
+[1] "~/.cmdstan/cmdstan-2.24.0-rc1/"
  ```
  
  For it to work on a computer with different location to `CmdStan`, run the following command in R:
@@ -28,6 +29,8 @@ The object `path\_to\_cmdstan.Rds` actually contains just a string that specifie
  path\_to\_cmdstan <- "my/path/to/cmdstan/installation"
  saveRDS(path\_to\_cmdstan, "path\_to\_cmdstan.Rds")
  ```
+ 
+Note: there has been an update of the way how `cmdstanr` package extracts parameters [see here for an example](https://discourse.mc-stan.org/t/cannot-extract-non-scalar-variables-from-cmdstanr-fit-object/21975). This yields previously saved `CmdStan` objects unworkable. To be able to work with the saved files, install earlier version of `cmdstanr` package, v0.2.0 [https://github.com/stan-dev/cmdstanr/releases/tag/v0.2.0](https://github.com/stan-dev/cmdstanr/releases/tag/v0.2.0).
 
 ### Structure of this repository
 

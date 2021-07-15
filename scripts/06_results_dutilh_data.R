@@ -6,6 +6,8 @@ library(bayesplot)
 library(posterior)
 library(tidyverse)
 library(patchwork)
+library(kable)
+library(kableExtra)
 
 source(here("R", "expose_stan_functions.R"))
 
@@ -56,7 +58,7 @@ call_rlater <- function(state_, draw_){
   rlater(1, nu, sigma, alpha, t0)
 }
 
-#### Read data and models -----
+# Read data and models -----
 hmm_later_prior_pred <- cmdstan_model(stan_file = here("stan", "later", "hmm_later_prior_pred.stan"), include_paths = here()) 
 hmm_later <- cmdstan_model(stan_file = here("stan", "later", "hmm_later.stan"), include_paths = here())
 parameters       <- c("nu_vec[1,1]", "nu_vec[2,1]",  "alpha",  "sigma",   "t0", "init_prob[1]", "tran_prob[1,1]", "tran_prob[2,2]")
@@ -64,7 +66,13 @@ parameters_latex <- c("\\nu_1^{(1)}", "\\nu_1^{(2)}", "\\alpha^{(1)}", "\\alpha^
 parameters_latex <- sprintf("$%s$", parameters_latex)
 samples_list <- list()
 
-# compute results for all 11 participants
+# extract samples
+for(subject in LETTERS[1:11]){
+  samples <- readRDS(here("saves", "fit_hmm_later", sprintf("dutilh_2010_subject_%s.Rds", subject)))
+  samples_list[[subject]] <- samples
+}
+
+# compute results for all 11 participants ----
 for(subject in LETTERS[1:11]){
   cat("===== Subject", subject, "=====\n")
   data <- readr::read_csv(here::here("data", sprintf("dutilh_2010_subject_%s.csv", subject)), 
@@ -76,9 +84,8 @@ for(subject in LETTERS[1:11]){
   data$obs <- seq_len(nrow(data))
   
   #### Get MCMC samples
-  samples <- readRDS(here("saves", "fit_hmm_later", sprintf("dutilh_2010_subject_%s.Rds", subject)))
+  samples <- samples_list[[subject]]
   cat("divergent transitions:", sum(samples$sampler_diagnostics()[,,5]), "\n")
-  samples_list[[subject]] <- samples
   samples$summary(variables = parameters) %>% print()
   
   traceplot <- bayesplot::mcmc_trace(samples$draws(variables = parameters), facet_args = list(ncol = 3)) +
@@ -338,26 +345,41 @@ for(subject in LETTERS[1:11]){
   
 }
 
+# tables ----
+prior_predictives <- readRDS(here("saves", "prior_predictives.Rds"))
+prior_var <- prior_predictives$summary(variables = parameters) %>%
+  dplyr::select(variable, sd) %>%
+  dplyr::transmute(variable = variable, prior_var = sd^2) 
+latex_tables <- list()
+
+for(subject in LETTERS[1:11]){
+  latex_tables[[subject]] <- samples_list[[subject]]$summary(variables = parameters) %>% 
+    left_join(prior_var, by = "variable") %>%
+    mutate(post_contraction = 1 - sd^2 / prior_var) %>%
+    dplyr::select(-prior_var) %>%
+    rename("Parameter"  = "variable",
+           "Mean"       = "mean",
+           "Median"     = "median",
+           "SD"         = "sd",
+           "5\\%"       = "q5",
+           "95\\%"      = "q95",
+           "$\\hat{R}$" = "rhat",
+           "Bulk"       = "ess_bulk",
+           "Tail"       = "ess_tail",
+           "Contraction"= "post_contraction") %>%
+    select(-mad) %>%
+    mutate(Parameter=parameters_latex) %>%
+    knitr::kable(digits  = c(0, 2, 2, 2, 2, 2, 3, 0, 0, 3),
+                 format  = "latex", booktabs = TRUE, escape = FALSE, linesep = c('', '', '', '', '', '\\addlinespace'),
+                 caption = sprintf("Descriptives of the posterior draws for Participant %s from \\citet{dutilh2011phase}.", subject),
+                 label   = sprintf("pars_%s", subject)) %>%
+    kableExtra::add_header_above(c(" " = 4, "Quantile" = 2, " " = 1, "ESS" = 2, " " = 1))
+}
+
+# writeLines(paste(latex_tables, collapse = "\n\n\n\n"))
+
+
 # plot between-state trade-off ----
-samples_list[["K"]]$summary(variables = parameters) %>% 
-  rename("Parameter"  = "variable",
-         "Mean"       = "mean",
-         "Median"     = "median",
-         "SD"         = "sd",
-         "5\\%"       = "q5",
-         "95\\%"      = "q95",
-         "$\\hat{R}$" = "rhat",
-         "Bulk"       = "ess_bulk",
-         "Tail"       = "ess_tail") %>%
-  select(-mad) %>%
-  mutate(Parameter=parameters_latex) %>%
-  knitr::kable(digits  = c(0, 2, 2, 2, 2, 2, 3, 0, 0),
-               format  = "latex", booktabs = TRUE, escape = FALSE, linesep = c('', '', '', '', '', '\\addlinespace'),
-               caption = "Descriptives of the posterior draws for Participant K from \\citet{dutilh2011phase}.",
-               label   = "tab:pars_K") %>%
-  kableExtra::add_header_above(c(" " = 4, "Quantile" = 2, " " = 1, "ESS" = 2))
-
-
 samples_all <- list()
 
 for(subject in LETTERS[1:11]){
