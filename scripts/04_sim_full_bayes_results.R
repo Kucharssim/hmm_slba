@@ -7,6 +7,12 @@ library(posterior)
 library(tidyverse)
 
 generated_data <- readRDS(here("saves", "prior_predictives.Rds"))
+
+# extract variables into separate objects for better manipulation
+rt <- generated_data$draws("rt")
+responses <- generated_data$draws("responses")
+state <- generated_data$draws("state")
+
 # we are interested in the following 9 parameters:
 parameters <- c("nu_vec[1,1]", "nu_vec[2,1]", "sigma", "alpha", "t0", "init_prob[1]", "tran_prob[1,1]", "tran_prob[2,2]")
 generating_parameters <- as_tibble(posterior::as_draws_df(generated_data$draws(parameters)))
@@ -20,6 +26,12 @@ estimated_parameters <- dplyr::select(generating_parameters, -c(".chain", ".iter
 parameters_names <- colnames(estimated_parameters)
 parameters_labels <- c("nu[1]^(1)", "nu[1]^(2)", "sigma", "alpha^(1)", "alpha^(2)", "tau", "pi[1]", "rho[11]", "rho[22]")
 names(parameters_labels) <- parameters_names
+
+
+char2label <- function(x){
+  xx <- sprintf("expression(%s)", x)
+  eval(parse(text=xx))
+}
 
 ### Using full Bayes ----
 # run run_fit_sbc.sh script
@@ -61,6 +73,7 @@ for(par in parameters_names){
 
 # plot sbc ranks as histogram
 png(filename = here("figures", "simulations", "sbc_density.png"), pointsize = 25, width = 750, height = 750)
+kk <- sqrt(length(parameters_names))
 par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
 for(par in parameters_names){
   hist(p_ecdf[[par]], breaks = seq(0, 1 + n_sbc_count, by = 1) - 0.5, main = "", xlab = "", ylab = "",
@@ -76,6 +89,7 @@ dev.off()
 
 # plot cumulative SBC
 png(filename = here("figures", "simulations", "sbc_cumulative.png"), pointsize = 25, width = 750, height = 750)
+kk <- sqrt(length(parameters_names))
 par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
 # compute theoretical 95%CIs
 sim_cum_unif <- t(replicate(1e4, ecdf(sample(counts, size = 1000, replace = TRUE))(counts)))
@@ -95,6 +109,7 @@ dev.off()
 
 # plot difference between cumulative and theoretical null distribution
 png(filename = here("figures", "simulations", "sbc_diff.png"), pointsize = 25, width = 750, height = 750)
+kk <- sqrt(length(parameters_names))
 par(mfrow = c(floor(kk), ceiling(kk)), mar = c(3, 3, 2, 1), mgp = c(2, 1, 0), oma = c(1.5, 1.5, 0.25, 0))
 diff_sim_cum_unif <- sweep(sim_cum_unif, 2, colMeans(sim_cum_unif), "-")
 lower <- apply(diff_sim_cum_unif, 2, quantile, 0.025)
@@ -152,6 +167,24 @@ posterior_summaries %>%
   facet_wrap(.~parameter, scales = "fixed") + 
   theme_bw()
 
+posterior_summaries %>%
+  group_by(parameter) %>%
+  summarise(mean_contraction = mean(contraction),
+            sd_contraction = sd(contraction),
+            mean_z_score = mean(z_score),
+            sd_z_score = sd(z_score))
+# parameter      mean_contraction sd_contraction mean_z_score sd_z_score
+# <chr>                     <dbl>          <dbl>        <dbl>      <dbl>
+# 1 alpha[1]                 0.777          0.175       0.0160       1.03 
+# 2 alpha[2]                 0.705          0.153      -0.00914      0.981
+# 3 init_prob[1]             0.0409         0.0668     -0.0341       0.998
+# 4 nu_vec[1,1]              0.592          0.228       0.0184       0.984
+# 5 nu_vec[2,1]              0.799          0.135      -0.00945      1.01 
+# 6 sigma[1]                 0.609          0.158      -0.0126       0.976
+# 7 t0[1]                    0.978          0.0130      0.00552      0.989
+# 8 tran_prob[1,1]           0.610          0.377      -0.0209       0.933
+# 9 tran_prob[2,2]           0.611          0.310       0.0371       0.985
+
 # plot sensitivity analyses: all axes are hold equal for all parameters
 png(here("figures", "simulations", "sensitivity_fixed.png"), pointsize = 25, width = 750, height = 750)
 kk <- sqrt(length(parameters_names))
@@ -162,10 +195,14 @@ for(p in parameters_names){
   x <- subset(posterior_summaries, subset = parameter == p)[["contraction"]]
   y <- subset(posterior_summaries, subset = parameter == p)[["z_score"]]
   
+  mean_x <- mean(x)
+  mean_y <- mean(y)
+  
   plot(x, y, pch = 19, xlab = "", ylab = "", main = "", 
        xlim = xlim, ylim = ylim, col = adjustcolor("black", alpha = 0.3))
   title(char2label(parameters_labels[p]), line = 1, cex.main = 1.5)
   abline(h = 0, v = 0, col = adjustcolor("black", alpha = 0.5), lwd = 2, lty = 2)
+  points(mean_x, mean_y, pch = 23, bg = "blue", cex = 1.25)
 }
 mtext("Posterior contraction", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
 mtext("Posterior z-score", side = 2, outer = TRUE, adj = 0.51, line = -0.5)
@@ -180,12 +217,16 @@ for(p in parameters_names){
   x <- subset(posterior_summaries, subset = parameter == p)[["contraction"]]
   y <- subset(posterior_summaries, subset = parameter == p)[["z_score"]]
   
+  mean_x <- mean(x)
+  mean_y <- mean(y)
+  
   xlim <- range(x)
   ylim <- range(y)
   plot(x, y, pch = 19, xlab = "", ylab = "", main = "", 
        xlim = xlim, ylim = ylim, col = adjustcolor("black", alpha = 0.3))
   title(char2label(parameters_labels[p]), line = 1, cex.main = 1.5)
   abline(h = 0, v = 0, col = adjustcolor("black", alpha = 0.5), lwd = 2, lty = 2)
+  points(mean_x, mean_y, pch = 23, bg = "blue", cex = 1.25)
 }
 mtext("Posterior contraction", side = 1, outer = TRUE, adj = 0.53, line = -0.5)
 mtext("Posterior z-score", side = 2, outer = TRUE, adj = 0.51, line = -0.5)
